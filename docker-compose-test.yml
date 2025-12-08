@@ -1,0 +1,19 @@
+services:
+    piped:
+        image: piped-backend:latest
+        restart: unless-stopped
+        ports:
+            - "8080:8080"
+        volumes:
+            - ./config.properties:/app/config.properties
+        depends_on:
+            - postgres
+    postgres:
+        image: postgres:17-alpine
+        restart: unless-stopped
+        volumes:
+            - ./data/db:/var/lib/postgresql/data
+        environment:
+            - POSTGRES_DB=piped
+            - POSTGRES_USER=piped
+            - POSTGRES_PASSWORD=changeme
