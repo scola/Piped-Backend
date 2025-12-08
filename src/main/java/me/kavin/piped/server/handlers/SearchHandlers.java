@@ -46,8 +46,7 @@ public class SearchHandlers {
 
         return mapper.writeValueAsBytes(Arrays.asList(
                 query,
-                YOUTUBE_SERVICE.getSuggestionExtractor().suggestionList(query)
-        ));
+                YOUTUBE_SERVICE.getSuggestionExtractor().suggestionList(query)));
 
     }
 
@@ -59,23 +58,16 @@ public class SearchHandlers {
 
         Sentry.setExtra("query", q);
 
-        final SearchInfo info = SearchInfo.getInfo(YOUTUBE_SERVICE,
-                YOUTUBE_SERVICE.getSearchQHFactory().fromQuery(q, Collections.singletonList(filter), null));
-
-        List<ContentItem> items = collectRelatedItems(info.getRelatedItems());
-
-        Page nextpage = info.getNextPage();
-
-        return mapper.writeValueAsBytes(new SearchResults(items,
-                mapper.writeValueAsString(nextpage), info.getSearchSuggestion(), info.isCorrectedSearch()));
-
+        // Use KidsSearchHandlers to search YouTube Kids instead of regular YouTube
+        return KidsSearchHandlers.kidsSearchResponse(q, filter);
     }
 
     public static byte[] searchPageResponse(String q, String filter, String prevpageStr)
             throws IOException, ExtractionException {
 
         if (StringUtils.isEmpty(q) || StringUtils.isEmpty(prevpageStr))
-            ExceptionHandler.throwErrorResponse(new InvalidRequestResponse("query and nextpage are required parameter"));
+            ExceptionHandler
+                    .throwErrorResponse(new InvalidRequestResponse("query and nextpage are required parameter"));
 
         Page prevpage = mapper.readValue(prevpageStr, Page.class);
 
