@@ -2,6 +2,7 @@ package me.kavin.piped.server.handlers;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import me.kavin.piped.utils.ExceptionHandler;
+import me.kavin.piped.utils.obj.ChannelItem;
 import me.kavin.piped.utils.obj.ContentItem;
 import me.kavin.piped.utils.obj.SearchResults;
 import me.kavin.piped.utils.obj.StreamItem;
@@ -102,12 +103,21 @@ public class KidsSearchHandlers {
                         JsonNode sectionContents = itemSection.path("contents");
                         if (sectionContents.isArray()) {
                             for (JsonNode item : sectionContents) {
-                                // YouTube Kids uses compactVideoRenderer instead of videoRenderer
+                                // YouTube Kids uses compactVideoRenderer for videos
                                 JsonNode compactVideoRenderer = item.path("compactVideoRenderer");
                                 if (!compactVideoRenderer.isMissingNode()) {
                                     ContentItem streamItem = parseCompactVideoRenderer(compactVideoRenderer);
                                     if (streamItem != null) {
                                         items.add(streamItem);
+                                    }
+                                }
+
+                                // YouTube Kids also returns compactChannelRenderer for channels
+                                JsonNode compactChannelRenderer = item.path("compactChannelRenderer");
+                                if (!compactChannelRenderer.isMissingNode()) {
+                                    ContentItem channelItem = parseCompactChannelRenderer(compactChannelRenderer);
+                                    if (channelItem != null) {
+                                        items.add(channelItem);
                                     }
                                 }
                             }
@@ -169,6 +179,69 @@ public class KidsSearchHandlers {
             e.printStackTrace();
             return null;
         }
+    }
+
+    /**
+     * Parses a single channel item from YouTube Kids API response
+     * (compactChannelRenderer).
+     */
+    private static ChannelItem parseCompactChannelRenderer(JsonNode channelRenderer) {
+        try {
+            String channelId = channelRenderer.path("channelId").asText();
+            if (channelId.isEmpty())
+                return null;
+
+            // YouTube Kids uses displayName for channel name
+            String name = extractText(channelRenderer.path("displayName"));
+            String thumbnail = extractThumbnail(channelRenderer.path("thumbnail"));
+
+            // YouTube Kids uses subscriberCountText for the handle, videoCountText for
+            // subscriber count
+            String subscriberText = extractText(channelRenderer.path("videoCountText"));
+            long subscribers = parseSubscribers(subscriberText);
+
+            // Channel description is not available in compactChannelRenderer
+            String description = "";
+
+            // Videos count not available in Kids search
+            long videos = -1;
+
+            return new ChannelItem(
+                    "/channel/" + channelId,
+                    name,
+                    thumbnail,
+                    description,
+                    subscribers,
+                    videos,
+                    false // verified status not available in Kids search
+            );
+        } catch (Exception e) {
+            System.err.println("Error parsing channel: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private static long parseSubscribers(String subscriberText) {
+        if (subscriberText.isEmpty())
+            return -1;
+
+        try {
+            // Extract numbers from text like "42.5M subscribers"
+            String numbers = subscriberText.replaceAll("[^0-9.]", "");
+            if (subscriberText.toLowerCase().contains("k")) {
+                return (long) (Float.parseFloat(numbers) * 1000);
+            } else if (subscriberText.toLowerCase().contains("m")) {
+                return (long) (Float.parseFloat(numbers) * 1000000);
+            } else if (subscriberText.toLowerCase().contains("b")) {
+                return (long) (Float.parseFloat(numbers) * 1000000000);
+            } else {
+                return Long.parseLong(numbers.replace(".", ""));
+            }
+        } catch (NumberFormatException e) {
+            // Ignore parsing errors
+        }
+        return -1;
     }
 
     private static String extractText(JsonNode textNode) {
