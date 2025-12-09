@@ -1,129 +1,244 @@
 package me.kavin.piped.server.handlers;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import me.kavin.piped.utils.ExceptionHandler;
 import me.kavin.piped.utils.obj.ContentItem;
+import me.kavin.piped.utils.obj.StreamItem;
 import me.kavin.piped.utils.resp.InvalidRequestResponse;
-import org.schabi.newpipe.extractor.channel.ChannelInfo;
-import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo;
-import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs;
-import org.schabi.newpipe.extractor.exceptions.ExtractionException;
+import okhttp3.*;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 
-import static me.kavin.piped.consts.Constants.YOUTUBE_SERVICE;
+import static me.kavin.piped.consts.Constants.h2client;
 import static me.kavin.piped.consts.Constants.mapper;
-import static me.kavin.piped.utils.CollectionUtils.collectPreloadedTabs;
-import static me.kavin.piped.utils.CollectionUtils.collectRelatedItems;
 
 public class KidsHandlers {
 
-    // Curated list of popular kid-friendly YouTube channels
-    private static final String[] KIDS_CHANNELS = {
-            "UCbCmjCuTUZos6Inko4u57UQ", // Cocomelon - Nursery Rhymes
-            "UCHnyfMqiRRG1u-2MsSQLbXA", // Veritasium (Educational)
-            "UC6nSFpj9HTCZ5t-N3Rm3-HA", // Vsauce (Educational)
-            "UCsooa4yRKGN_zEE8iknghZA", // TED-Ed (Educational)
-            "UCX6OQ3DkcsbYNE6H8uQQuVA", // MrBeast (Family Friendly)
-            "UChDKyKQ59fYz3JO2fl0Z6sg", // Blippi
-            "UCpV1EyGuFFDP-T5ENE3W8Fw", // ChuChu TV Nursery Rhymes
-            "UCJplp5SjeGSdVdwsfb9Q7lQ", // Sesame Street
-            "UCl4-WBRqWA2MlxqYHb63j-w", // Super Simple Songs
-            "UCgwyp8DPuVMzWWWQwJJOgOQ", // Peppa Pig Official Channel
-            "UCKAqou7V9FAWXpZd9xtOg3Q", // Paw Patrol
-            "UCelMeixAOTs2OQAAi9wU8-g", // SciShow Kids
-            "UCH4BNI0-FOK2dMXoFtViWHw", // PBS Kids
-            "UCzU8AS_KK4kYg9Y1N8IVYrA", // Ryan's World
-            "UC-ViW8jJrfHOPft62xH60nw", // Kids Diana Show
-    };
+    private static final String YOUTUBE_KIDS_BROWSE_URL = "https://www.youtubekids.com/youtubei/v1/browse?alt=json";
+    private static final String CLIENT_VERSION = "2.20251027.00.00";
+    private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     /**
-     * Fetches kid-friendly videos from curated YouTube channels.
-     * This provides an alternative to YouTube's trending that focuses on
-     * family-friendly content.
+     * Fetches kid-friendly videos from YouTube Kids home page.
      *
-     * @param region The region code (used for compatibility, but not heavily relied
-     *               upon)
+     * @param region The region code (used for compatibility)
      * @return JSON bytes containing a list of kid-friendly videos
-     * @throws ExtractionException If there's an error extracting video information
-     * @throws IOException         If there's a network error
+     * @throws IOException If there's a network error
      */
     public static byte[] kidsVideosResponse(String region)
-            throws ExtractionException, IOException {
+            throws IOException {
 
         if (region == null)
             ExceptionHandler.throwErrorResponse(new InvalidRequestResponse("region is a required parameter"));
 
-        final List<ContentItem> kidsVideos = new ArrayList<>();
-
-        // Fetch videos from multiple kid-friendly channels
-        int channelsToFetch = Math.min(5, KIDS_CHANNELS.length); // Fetch from 5 channels to get variety
-
-        for (int i = 0; i < channelsToFetch; i++) {
-            try {
-                String channelUrl = "https://www.youtube.com/channel/" + KIDS_CHANNELS[i];
-
-                // Get channel info
-                ChannelInfo channelInfo = ChannelInfo.getInfo(channelUrl);
-
-                // Find the videos tab
-                var videosTab = collectPreloadedTabs(channelInfo.getTabs())
-                        .stream()
-                        .filter(tab -> tab.getContentFilters().contains(ChannelTabs.VIDEOS))
-                        .findFirst();
-
-                if (videosTab.isPresent()) {
-                    // Get videos from the channel
-                    ChannelTabInfo tabInfo = ChannelTabInfo.getInfo(YOUTUBE_SERVICE, videosTab.get());
-
-                    if (tabInfo.getRelatedItems() != null && !tabInfo.getRelatedItems().isEmpty()) {
-                        List<ContentItem> channelVideos = collectRelatedItems(tabInfo.getRelatedItems());
-
-                        // Add up to 4 videos from each channel
-                        int videosToAdd = Math.min(4, channelVideos.size());
-                        kidsVideos.addAll(channelVideos.subList(0, videosToAdd));
+        // Build the YouTube Kids API request payload for home page
+        String requestBody = String.format("""
+                {
+                  "context": {
+                    "client": {
+                      "clientName": "WEB_KIDS",
+                      "clientVersion": "%s"
                     }
+                  },
+                  "browseId": "FEkids_home"
                 }
+                """, CLIENT_VERSION);
 
-                // Stop if we have enough videos (aim for ~20 videos total)
-                if (kidsVideos.size() >= 20) {
-                    break;
-                }
+        RequestBody body = RequestBody.create(requestBody, JSON);
+        Request request = new Request.Builder()
+                .url(YOUTUBE_KIDS_BROWSE_URL)
+                .post(body)
+                .header("Content-Type", "application/json")
+                .header("User-Agent",
+                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36")
+                .header("x-youtube-client-name", "76")
+                .header("x-youtube-client-version", CLIENT_VERSION)
+                .header("origin", "https://www.youtubekids.com")
+                .build();
 
-            } catch (Exception e) {
-                // If one channel fails, continue with others
-                System.err.println("Failed to fetch from channel " + KIDS_CHANNELS[i] + ": " + e.getMessage());
+        try (Response response = h2client.newCall(request).execute()) {
+            if (!response.isSuccessful()) {
+                throw new IOException("YouTube Kids API returned error: " + response.code());
             }
+
+            String responseBody = response.body().string();
+            JsonNode rootNode = mapper.readTree(responseBody);
+
+            List<ContentItem> items = parseKidsBrowseResults(rootNode);
+
+            return mapper.writeValueAsBytes(items);
+        }
+    }
+
+    /**
+     * Parses YouTube Kids browse/home page results from the API response.
+     */
+    private static List<ContentItem> parseKidsBrowseResults(JsonNode rootNode) {
+        List<ContentItem> items = new ArrayList<>();
+
+        try {
+            // Recursively find all compactVideoRenderer objects in the response
+            findVideoRenderers(rootNode, items);
+
+        } catch (Exception e) {
+            System.err.println("Error parsing YouTube Kids browse results: " + e.getMessage());
+            e.printStackTrace();
         }
 
-        // If we didn't get enough videos, try a few more channels
-        if (kidsVideos.size() < 15 && channelsToFetch < KIDS_CHANNELS.length) {
-            for (int i = channelsToFetch; i < KIDS_CHANNELS.length && kidsVideos.size() < 20; i++) {
-                try {
-                    String channelUrl = "https://www.youtube.com/channel/" + KIDS_CHANNELS[i];
-                    ChannelInfo channelInfo = ChannelInfo.getInfo(channelUrl);
+        return items;
+    }
 
-                    var videosTab = collectPreloadedTabs(channelInfo.getTabs())
-                            .stream()
-                            .filter(tab -> tab.getContentFilters().contains(ChannelTabs.VIDEOS))
-                            .findFirst();
-
-                    if (videosTab.isPresent()) {
-                        ChannelTabInfo tabInfo = ChannelTabInfo.getInfo(YOUTUBE_SERVICE, videosTab.get());
-
-                        if (tabInfo.getRelatedItems() != null && !tabInfo.getRelatedItems().isEmpty()) {
-                            List<ContentItem> channelVideos = collectRelatedItems(tabInfo.getRelatedItems());
-                            int videosToAdd = Math.min(3, channelVideos.size());
-                            kidsVideos.addAll(channelVideos.subList(0, videosToAdd));
-                        }
-                    }
-                } catch (Exception e) {
-                    // Silently continue
-                }
-            }
+    /**
+     * Recursively searches for compactVideoRenderer objects in the JSON tree.
+     */
+    private static void findVideoRenderers(JsonNode node, List<ContentItem> items) {
+        if (node == null || node.isNull()) {
+            return;
         }
 
-        return mapper.writeValueAsBytes(kidsVideos);
+        if (node.isObject()) {
+            // Check if this node is a compactVideoRenderer
+            if (node.has("compactVideoRenderer")) {
+                JsonNode videoRenderer = node.get("compactVideoRenderer");
+                StreamItem item = parseCompactVideoRenderer(videoRenderer);
+                if (item != null) {
+                    items.add(item);
+                }
+            }
+
+            // Recursively search all child nodes
+            Iterator<Map.Entry<String, JsonNode>> fields = node.fields();
+            while (fields.hasNext()) {
+                Map.Entry<String, JsonNode> entry = fields.next();
+                findVideoRenderers(entry.getValue(), items);
+            }
+        } else if (node.isArray()) {
+            // Recursively search array elements
+            for (JsonNode arrayElement : node) {
+                findVideoRenderers(arrayElement, items);
+            }
+        }
+    }
+
+    /**
+     * Parses a single video item from YouTube Kids API response
+     * (compactVideoRenderer).
+     */
+    private static StreamItem parseCompactVideoRenderer(JsonNode videoRenderer) {
+        try {
+            String videoId = videoRenderer.path("videoId").asText();
+            if (videoId.isEmpty())
+                return null;
+
+            String title = extractText(videoRenderer.path("title"));
+            String thumbnail = extractThumbnail(videoRenderer.path("thumbnail"));
+
+            // YouTube Kids uses longBylineText for channel name
+            String uploaderName = extractText(videoRenderer.path("longBylineText"));
+            String channelId = extractChannelId(videoRenderer.path("longBylineText"));
+            String uploaderUrl = channelId != null ? "/channel/" + channelId : null;
+            String uploaderAvatar = extractOwnerThumbnail(videoRenderer.path("channelThumbnail"));
+            String uploadedDate = extractText(videoRenderer.path("publishedTimeText"));
+
+            long duration = parseDuration(extractText(videoRenderer.path("lengthText")));
+            long views = parseViews(extractText(videoRenderer.path("viewCountText")));
+
+            return new StreamItem(
+                    "/watch?v=" + videoId,
+                    title,
+                    thumbnail,
+                    uploaderName,
+                    uploaderUrl,
+                    uploaderAvatar,
+                    uploadedDate,
+                    "",
+                    duration,
+                    views,
+                    -1,
+                    false,
+                    false);
+        } catch (Exception e) {
+            System.err.println("Error parsing video: " + e.getMessage());
+            return null;
+        }
+    }
+
+    private static String extractText(JsonNode textNode) {
+        if (textNode.has("runs") && textNode.get("runs").isArray() && textNode.get("runs").size() > 0) {
+            return textNode.get("runs").get(0).path("text").asText("");
+        } else if (textNode.has("simpleText")) {
+            return textNode.path("simpleText").asText("");
+        }
+        return "";
+    }
+
+    private static String extractThumbnail(JsonNode thumbnailNode) {
+        JsonNode thumbnails = thumbnailNode.path("thumbnails");
+        if (thumbnails.isArray() && thumbnails.size() > 0) {
+            return thumbnails.get(thumbnails.size() - 1).path("url").asText("");
+        }
+        return "";
+    }
+
+    private static String extractOwnerThumbnail(JsonNode channelThumbnailNode) {
+        JsonNode thumbnails = channelThumbnailNode.path("thumbnails");
+        if (thumbnails.isArray() && thumbnails.size() > 0) {
+            return thumbnails.get(0).path("url").asText("");
+        }
+        return "";
+    }
+
+    private static String extractChannelId(JsonNode ownerTextNode) {
+        if (ownerTextNode.has("runs") && ownerTextNode.get("runs").isArray() && ownerTextNode.get("runs").size() > 0) {
+            JsonNode browseEndpoint = ownerTextNode.get("runs").get(0)
+                    .path("navigationEndpoint")
+                    .path("browseEndpoint");
+            return browseEndpoint.path("browseId").asText(null);
+        }
+        return null;
+    }
+
+    private static long parseDuration(String durationText) {
+        if (durationText.isEmpty())
+            return -1;
+
+        try {
+            String[] parts = durationText.split(":");
+            if (parts.length == 2) {
+                return Integer.parseInt(parts[0]) * 60 + Integer.parseInt(parts[1]);
+            } else if (parts.length == 3) {
+                return Integer.parseInt(parts[0]) * 3600 +
+                        Integer.parseInt(parts[1]) * 60 +
+                        Integer.parseInt(parts[2]);
+            }
+        } catch (NumberFormatException e) {
+            // Ignore
+        }
+        return -1;
+    }
+
+    private static long parseViews(String viewsText) {
+        if (viewsText.isEmpty())
+            return -1;
+
+        try {
+            String numbers = viewsText.replaceAll("[^0-9.]", "");
+            if (viewsText.toLowerCase().contains("k")) {
+                return (long) (Float.parseFloat(numbers) * 1000);
+            } else if (viewsText.toLowerCase().contains("m")) {
+                return (long) (Float.parseFloat(numbers) * 1000000);
+            } else if (viewsText.toLowerCase().contains("b")) {
+                return (long) (Float.parseFloat(numbers) * 1000000000);
+            } else {
+                return Long.parseLong(numbers.replace(".", ""));
+            }
+        } catch (NumberFormatException e) {
+            // Ignore
+        }
+        return -1;
     }
 }
