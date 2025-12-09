@@ -194,7 +194,19 @@ public class KidsSearchHandlers {
 
             // YouTube Kids uses displayName for channel name
             String name = extractText(channelRenderer.path("displayName"));
-            String thumbnail = rewriteURL(extractThumbnail(channelRenderer.path("thumbnail")));
+            String thumbnailUrl = extractThumbnail(channelRenderer.path("thumbnail"));
+
+            // Convert protocol-relative URLs to https and rewrite
+            String thumbnail = null;
+            if (thumbnailUrl != null && !thumbnailUrl.isEmpty()) {
+                // Handle protocol-relative URLs (//domain.com) by adding https:
+                if (thumbnailUrl.startsWith("//")) {
+                    thumbnailUrl = "https:" + thumbnailUrl;
+                }
+                if (thumbnailUrl.startsWith("http")) {
+                    thumbnail = rewriteURL(thumbnailUrl);
+                }
+            }
 
             // YouTube Kids uses subscriberCountText for the handle, videoCountText for
             // subscriber count
