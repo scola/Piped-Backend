@@ -15,6 +15,7 @@ import java.util.Map;
 
 import static me.kavin.piped.consts.Constants.h2client;
 import static me.kavin.piped.consts.Constants.mapper;
+import static me.kavin.piped.utils.URLUtils.rewriteURL;
 
 public class KidsHandlers {
 
@@ -135,13 +136,13 @@ public class KidsHandlers {
                 return null;
 
             String title = extractText(videoRenderer.path("title"));
-            String thumbnail = extractThumbnail(videoRenderer.path("thumbnail"));
+            String thumbnail = rewriteURL(extractThumbnail(videoRenderer.path("thumbnail")));
 
             // YouTube Kids uses longBylineText for channel name
             String uploaderName = extractText(videoRenderer.path("longBylineText"));
             String channelId = extractChannelId(videoRenderer.path("longBylineText"));
             String uploaderUrl = channelId != null ? "/channel/" + channelId : null;
-            String uploaderAvatar = extractOwnerThumbnail(videoRenderer.path("channelThumbnail"));
+            String uploaderAvatar = rewriteURL(extractOwnerThumbnail(videoRenderer.path("channelThumbnail")));
             String uploadedDate = extractText(videoRenderer.path("publishedTimeText"));
 
             long duration = parseDuration(extractText(videoRenderer.path("lengthText")));

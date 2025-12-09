@@ -16,6 +16,7 @@ import java.util.List;
 
 import static me.kavin.piped.consts.Constants.h2client;
 import static me.kavin.piped.consts.Constants.mapper;
+import static me.kavin.piped.utils.URLUtils.rewriteURL;
 
 public class KidsSearchHandlers {
 
@@ -144,13 +145,13 @@ public class KidsSearchHandlers {
                 return null;
 
             String title = extractText(videoRenderer.path("title"));
-            String thumbnail = extractThumbnail(videoRenderer.path("thumbnail"));
+            String thumbnail = rewriteURL(extractThumbnail(videoRenderer.path("thumbnail")));
 
             // YouTube Kids uses longBylineText for channel name
             String uploaderName = extractText(videoRenderer.path("longBylineText"));
             String channelId = extractChannelId(videoRenderer.path("longBylineText"));
             String uploaderUrl = channelId != null ? "/channel/" + channelId : null;
-            String uploaderAvatar = extractOwnerThumbnail(videoRenderer.path("channelThumbnail"));
+            String uploaderAvatar = rewriteURL(extractOwnerThumbnail(videoRenderer.path("channelThumbnail")));
             String uploadedDate = extractText(videoRenderer.path("publishedTimeText"));
 
             // YouTube Kids doesn't have description in compact view
@@ -193,7 +194,7 @@ public class KidsSearchHandlers {
 
             // YouTube Kids uses displayName for channel name
             String name = extractText(channelRenderer.path("displayName"));
-            String thumbnail = extractThumbnail(channelRenderer.path("thumbnail"));
+            String thumbnail = rewriteURL(extractThumbnail(channelRenderer.path("thumbnail")));
 
             // YouTube Kids uses subscriberCountText for the handle, videoCountText for
             // subscriber count
